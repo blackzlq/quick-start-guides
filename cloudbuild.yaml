@@ -85,6 +85,23 @@ steps:
   allowFailure: true
   waitFor: ['create gke cluster']
 
+- id: 'Copy metadata'
+  name: 'ubuntu'
+  entrypoint: 'bash'
+  args:
+  - '-c'
+  - |
+    mkdir -p security_test/scan_target/ && find . -mindepth 1 -maxdepth 1 -type d ! -name "security_test" -exec cp -r {} security_test/scan_target/ \;
+    mkdir -p /workspace/security_test/scan_target
+    # Exclude /workspace/security_test from the copy to avoid recursive issue
+    find . -mindepth 1 -maxdepth 1 ! -path "./security_test" -exec cp -r {} /workspace/security_test/scan_target/ \;
+    chown -R 65532:65532 /workspace/security_test/scan_target
+    mkdir -p /workspace/security_test/allowlist
+    cp security_test/config.yaml /workspace/security_test/config.yaml
+    cp -r security_test/allowlist/* /workspace/security_test/allowlist/ || echo "Allowlist folder is empty or not found"
+  allowFailure: true
+  waitFor: ['Generate Kubeconfig']
+
 - id: 'create ray cluster'
   name: "hashicorp/terraform:latest"
   allowFailure: true
@@ -142,10 +159,35 @@ steps:
     --address=http://127.0.0.1:8265 -- python -c "import ray; ray.init(); print(ray.cluster_resources())"
     echo "pass" > /workspace/ray_result.txt
 
+# gcr.io/cloud-builders/docker is a special image: This image provided by Google Cloud contains the docker command-line tool, which is essential for executing Docker commands like docker build and docker run within your Cloud Build steps.
+# gcr.io/${_PROJECT_ID}/check_violations:latest is your application image: This image contains your security check tool and its dependencies. It's designed to be run, not to build or run other Docker images.
+- name: 'gcr.io/cloud-builders/docker'
+  id: 'security test ray cluster'
+  entrypoint: 'bash'
+  args:
+  - '-c'
+  - |
+    docker run \
+    --network=cloudbuild \
+    --rm \
+    -v /workspace/security_test/allowlist:/workspace/security_test/allowlist \
+    -v /workspace/security_test/config.yaml:/workspace/security_test/config.yaml \
+    -v /workspace/kubeconfig:/root/.kube/config \
+    ${_SHIPSHAPE_IMAGE} \
+    --mode=cluster \
+    --allowlist_folder=/workspace/security_test/allowlist \
+    --kube_config_path=/root/.kube/config \
+    --max_wait_duration=3000 \
+    --max_parallel=100 \
+    --cluster_scan_config_path=/workspace/security_test/config.yaml \
+    2>&1 | tee /workspace/shipshape_on_cluster_ray_cluster.txt 2>&1
+  allowFailure: true
+  waitFor: ['test ray cluster']
+
 - id: 'cleanup ray cluster'
   name: "hashicorp/terraform:latest"
   allowFailure: true
-  waitFor: ['test ray cluster']
+  waitFor: ['security test ray cluster']
   entrypoint: 'sh'
   args:
   - '-c'
@@ -232,10 +274,35 @@ steps:
     python3 test_hub.py "127.0.0.1:9442" $_AUTOPILOT_CLUSTER
     echo "pass" > /workspace/jupyterhub_test_result.txt
 
+# gcr.io/cloud-builders/docker is a special image: This image provided by Google Cloud contains the docker command-line tool, which is essential for executing Docker commands like docker build and docker run within your Cloud Build steps.
+# gcr.io/${_PROJECT_ID}/check_violations:latest is your application image: This image contains your security check tool and its dependencies. It's designed to be run, not to build or run other Docker images.
+- name: 'gcr.io/cloud-builders/docker'
+  id: 'security test jupyterhub'
+  entrypoint: 'bash'
+  args:
+  - '-c'
+  - |
+    docker run \
+    --network=cloudbuild \
+    --rm \
+    -v /workspace/security_test/allowlist:/workspace/security_test/allowlist \
+    -v /workspace/security_test/config.yaml:/workspace/security_test/config.yaml \
+    -v /workspace/kubeconfig:/root/.kube/config \
+    ${_SHIPSHAPE_IMAGE} \
+    --mode=cluster \
+    --allowlist_folder=/workspace/security_test/allowlist \
+    --kube_config_path=/root/.kube/config \
+    --max_wait_duration=3000 \
+    --max_parallel=100 \
+    --cluster_scan_config_path=/workspace/security_test/config.yaml \
+    2>&1 | tee /workspace/shipshape_on_cluster_jupyterhub.txt 2>&1
+  allowFailure: true
+  waitFor: ['test jupyterhub']
+
 - id: 'cleanup jupyterhub'
   name: "hashicorp/terraform:latest"
   allowFailure: true
-  waitFor: ['test jupyterhub']
+  waitFor: ['security test jupyterhub']
   entrypoint: 'sh'
   args:
   - '-c'
@@ -365,10 +432,36 @@ steps:
     # python3 ./rag/tests/test_rag.py "http://127.0.0.1:8081/prompt"
     # echo "pass" > /workspace/rag_prompt_result.txt
 
+# gcr.io/cloud-builders/docker is a special image: This image provided by Google Cloud contains the docker command-line tool, which is essential for executing Docker commands like docker build and docker run within your Cloud Build steps.
+# gcr.io/${_PROJECT_ID}/check_violations:latest is your application image: This image contains your security check tool and its dependencies. It's designed to be run, not to build or run other Docker images.
+- name: 'gcr.io/cloud-builders/docker'
+  id: 'security test rag'
+  entrypoint: 'bash'
+  args:
+  - '-c'
+  - |
+    docker run \
+    --network=cloudbuild \
+    --rm \
+    -v /workspace/security_test/allowlist:/workspace/security_test/allowlist \
+    -v /workspace/security_test/config.yaml:/workspace/security_test/config.yaml \
+    -v /workspace/kubeconfig:/root/.kube/config \
+    ${_SHIPSHAPE_IMAGE} \
+    --mode=cluster \
+    --allowlist_folder=/workspace/security_test/allowlist \
+    --kube_config_path=/root/.kube/config \
+    --max_wait_duration=3000 \
+    --max_parallel=100 \
+    --cluster_scan_config_path=/workspace/security_test/config.yaml \
+    2>&1 | tee /workspace/shipshape_on_cluster_rag.txt 2>&1
+  allowFailure: true
+  waitFor: ['test rag']
+
+
 - id: 'cleanup rag'
   name: "hashicorp/terraform:latest"
   allowFailure: true
-  waitFor: ['test rag']
+  waitFor: ['security test rag']
   entrypoint: 'sh'
   args:
   - '-c'
@@ -460,6 +553,20 @@ steps:
 
     if [[ $(cat /workspace/rag_tf_result.txt) != "pass" ]]; then
       echo "rag tf failed"
+      exit 1
+    fi
+    
+    if grep -q "Validation failed" /workspace/shipshape_on_cluster_ray_cluster.txt; then
+      echo "Shipshape on cluster scan validation on ray cluster failed, please check the log. knowledge share slides: go/shipshape-ai-on-gke-slide"
+      exit 1
+    fi
+
+    if grep -q "Validation failed" /workspace/shipshape_on_cluster_jupyterhub.txt; then
+      echo "Shipshape on cluster scan validation on jupyterhub failed, please check the log. knowledge share slides: go/shipshape-ai-on-gke-slide"
+      exit 1
+    fi
+    if grep -q "Validation failed" /workspace/shipshape_on_cluster_rag.txt; then
+      echo "Shipshape on cluster scan validation on rag failed, please check the log. knowledge share slides: go/shipshape-ai-on-gke-slide"
       exit 1
     fi
 
