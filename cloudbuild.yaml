@@ -105,7 +105,7 @@ steps:
 - id: 'create ray cluster'
   name: "hashicorp/terraform:latest"
   allowFailure: true
-  waitFor: ['create gke cluster']
+  waitFor: ['Generate Kubeconfig']
   entrypoint: 'sh'
   args:
   - '-c'
@@ -211,7 +211,7 @@ steps:
 - id: 'create jupyterhub'
   name: "hashicorp/terraform:latest"
   allowFailure: true
-  waitFor: ['create gke cluster']
+  waitFor: ['Generate Kubeconfig']
   entrypoint: 'sh'
   args:
   - '-c'
@@ -325,7 +325,7 @@ steps:
 - id: 'create rag'
   name: "hashicorp/terraform:latest"
   allowFailure: true
-  waitFor: ['create gke cluster']
+  waitFor: ['Generate Kubeconfig']
   secretEnv: ['KAGGLE_USERNAME', 'KAGGLE_KEY']
   entrypoint: 'sh'
   args:
